@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10141c">
+  <title>Forex Trading Journal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='rules.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Forex Trading Journal home">
+      <span class="brand-mark" aria-hidden="true">FJ</span>
+      <span>Forex Trading Journal</span>
+    </a>
+    <span class="header-note">Private journal · saved on this device</span>
+  </header>
+
+  <main class="page-shell">
+    <section id="dashboard-view" aria-labelledby="dashboard-title">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">YOUR ACCOUNTS</p>
+          <h1 id="dashboard-title">Saved Generals</h1>
+          <p class="muted">Keep each trading account and its records in one place.</p>
+        </div>
+        <button id="add-general-button" class="button button-primary" type="button">Add General</button>
+      </div>
+      <div class="summary-line">
+        <span><strong id="general-count">0</strong> Generals</span>
+      </div>
+      <div id="general-list" class="general-grid" aria-live="polite"></div>
+      <p id="dashboard-empty" class="empty-state" hidden>No Generals yet. Create one to start your journal.</p>
+    </section>
+
+    <section id="journal-view" aria-labelledby="journal-title" hidden>
+      <div class="journal-heading">
+        <div>
+          <button id="back-button" class="button button-quiet back-button" type="button">← Back to Generals</button>
+          <p class="eyebrow">TRADING JOURNAL</p>
+          <h1 id="journal-title"></h1>
+          <p id="trade-count" class="muted"></p>
+        </div>
+        <div class="heading-actions">
+          <button id="edit-general-button" class="button button-secondary" type="button">Edit General</button>
+          <button id="add-trade-button" class="button button-primary" type="button">Add Trade</button>
+        </div>
+      </div>
+      <section class="pnl-summary" aria-label="Profit and loss summary">
+        <div class="pnl-side pnl-profit">
+          <span>Profit</span>
+          <strong id="total-profit">+$0.00</strong>
+        </div>
+        <div class="pnl-meter-wrap">
+          <svg class="pnl-meter" viewBox="0 0 220 220" role="img" aria-labelledby="meter-title meter-description">
+            <title id="meter-title">Total capital meter</title>
+            <desc id="meter-description">Profit and loss distribution for this General.</desc>
+            <circle class="meter-track" cx="110" cy="110" r="91"></circle>
+            <circle id="meter-profit-arc" class="meter-profit-arc" cx="110" cy="110" r="91"></circle>
+            <circle id="meter-loss-arc" class="meter-loss-arc" cx="110" cy="110" r="91"></circle>
+          </svg>
+          <div class="meter-center">
+            <span>Total Capital</span>
+            <strong id="total-capital">Not set</strong>
+            <small id="capital-status">Set starting capital</small>
+          </div>
+        </div>
+        <div class="pnl-side pnl-loss">
+          <span>Loss</span>
+          <strong id="total-loss">-$0.00</strong>
+        </div>
+      </section>
+      <p id="pnl-incomplete" class="pnl-incomplete" hidden></p>
+      <div class="table-frame">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Date</th>
+              <th scope="col">Pair</th>
+              <th scope="col">BUY/SELL</th>
+              <th scope="col">Lot</th>
+              <th scope="col">Entry</th>
+              <th scope="col">Exit</th>
+              <th scope="col">Capital after target</th>
+              <th scope="col">P&L ($)</th>
+              <th scope="col">Emotion</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="trade-list"></tbody>
+        </table>
+        <p id="trades-empty" class="empty-state table-empty" hidden>No trades in this General yet. Add a trade to begin.</p>
+      </div>
+    </section>
+
+    <p id="app-message" class="app-message" role="status" aria-live="polite" hidden></p>
+  </main>
+
+  <dialog id="general-dialog" class="form-dialog" aria-labelledby="general-dialog-title">
+    <form id="general-form" novalidate>
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">ACCOUNT</p>
+          <h2 id="general-dialog-title">Add General</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="general-dialog" aria-label="Cancel">×</button>
+      </div>
+      <label for="general-name">General Name</label>
+      <input id="general-name" name="name" type="text" maxlength="80" autocomplete="off" required>
+      <label for="general-starting-capital" class="capital-label">Starting Capital (USD) <span class="muted">Optional</span></label>
+      <input id="general-starting-capital" name="starting_capital" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 500">
+      <p id="general-error" class="field-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" type="button" data-close-dialog="general-dialog">Cancel</button>
+        <button id="general-save-button" class="button button-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="trade-dialog" class="form-dialog trade-dialog" aria-labelledby="trade-dialog-title">
+    <form id="trade-form" novalidate>
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">TRADING JOURNAL</p>
+          <h2 id="trade-dialog-title">Add Trade</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="trade-dialog" aria-label="Cancel">×</button>
+      </div>
+      <div class="form-grid">
+        <div class="field full-width">
+          <label for="trade-number">#</label>
+          <input id="trade-number" name="trade_number" type="number" readonly>
+        </div>
+        <div class="field">
+          <label for="trade-date">Date</label>
+          <input id="trade-date" name="date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="trade-pair">Pair</label>
+          <input id="trade-pair" name="pair" type="text" maxlength="30" value="XAUUSD" required>
+        </div>
+        <div class="field">
+          <label for="trade-side">BUY/SELL</label>
+          <select id="trade-side" name="side" required>
+            <option value="">Choose side</option>
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="trade-lot">Lot</label>
+          <input id="trade-lot" name="lot" type="number" min="0" step="any" required>
+        </div>
+        <div class="field">
+          <label for="trade-entry">Entry</label>
+          <input id="trade-entry" name="entry" type="number" step="any" required>
+        </div>
+        <div class="field">
+          <label for="trade-exit">Exit</label>
+          <input id="trade-exit" name="exit" type="number" step="any" required>
+        </div>
+        <div class="field full-width">
+          <label for="trade-capital">Capital after target</label>
+          <input id="trade-capital" name="capital_after_target" type="number" step="any" required>
+        </div>
+        <div class="field full-width">
+          <label for="trade-pnl">P&amp;L ($) <span class="muted">Optional · realized result</span></label>
+          <input id="trade-pnl" name="pnl" type="number" step="any" inputmode="decimal" placeholder="Leave blank if not recorded">
+        </div>
+        <div class="field full-width">
+          <label for="trade-emotion">Emotion</label>
+          <select id="trade-emotion" name="emotion" required>
+            <option value="">Choose emotion</option>
+            <option>Calm</option>
+            <option>Confident</option>
+            <option>Fearful</option>
+            <option>Greedy</option>
+            <option>Revenge Trading</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div id="custom-emotion-field" class="field full-width" hidden>
+          <label for="custom-emotion">Custom emotion</label>
+          <input id="custom-emotion" name="custom_emotion" type="text" maxlength="80">
+        </div>
+      </div>
+      <p id="trade-error" class="field-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" type="button" data-close-dialog="trade-dialog">Cancel</button>
+        <button id="trade-save-button" class="button button-primary" type="submit">Save Trade</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rules-dialog" class="rules-dialog" aria-labelledby="rules-title">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">REQUIRED ACKNOWLEDGEMENT</p>
+        <h2 id="rules-title">Trading Rules</h2>
+      </div>
+    </div>
+    <p class="muted rules-intro">Review and acknowledge every configured rule. Update the rule list in <code>static/rules.js</code>.</p>
+    <ul id="rules-list" class="rules-list"></ul>
+    <p id="rules-error" class="field-error" role="alert" hidden>Please acknowledge every configured rule before closing.</p>
+    <div class="dialog-actions">
+      <button id="rules-close-button" class="button button-primary" type="button" disabled>Agree &amp; Close</button>
+    </div>
+  </dialog>
+
+  <footer class="site-footer">Your journal is stored locally by this application.</footer>
+</body>
+</html>
