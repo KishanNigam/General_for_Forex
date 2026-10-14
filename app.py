@@ -7,7 +7,9 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
+
+from storage import StoreError
 
 
 GENERAL_NAME_LIMIT = 80
@@ -23,10 +25,6 @@ TRADE_FIELDS = (
     "capital_after_target",
     "emotion",
 )
-
-
-class StoreError(RuntimeError):
-    pass
 
 
 def _read_json(path, default):
@@ -195,34 +193,77 @@ def _validate_starting_capital(value):
     return capital
 
 
-def create_app(storage_dir=None):
-    app = Flask(__name__)
+def create_app(
+    storage_dir=None,
+    storage_factory=None,
+    initialize_storage=True,
+    asset_fetcher=None,
+):
+    app = Flask(__name__, static_folder=None)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     data_dir = Path(storage_dir) if storage_dir else Path(app.root_path) / "data"
     generals_path = data_dir / "generals.json"
     trades_path = data_dir / "trades.json"
     storage_lock = threading.RLock()
     app.config["DATA_DIR"] = data_dir
+    app.config["STORAGE_BACKEND"] = "r2" if storage_factory else "local"
 
     def read_store():
+        if storage_factory is not None:
+            return storage_factory().read()
         generals = _read_json(generals_path, [])
         trades = _read_json(trades_path, [])
         return generals, trades
 
     def save_store(generals, trades):
+        if storage_factory is not None:
+            storage_factory().save_store(generals, trades)
+            return
         _write_json_batch({generals_path: generals, trades_path: trades})
+
+    def save_generals(generals):
+        if storage_factory is not None:
+            storage_factory().save_generals(generals)
+            return
+        _write_json(generals_path, generals)
+
+    def save_trades(trades):
+        if storage_factory is not None:
+            storage_factory().save_trades(trades)
+            return
+        _write_json(trades_path, trades)
 
     def find_general(generals, general_id):
         return next((item for item in generals if item.get("id") == general_id), None)
 
     @app.errorhandler(StoreError)
     def handle_store_error(exc):
-        app.logger.error("JSON storage operation failed: %s", exc)
+        app.logger.error("Journal storage operation failed: %s", exc)
         return _error(str(exc), 500)
 
     @app.get("/")
     def index():
+        if asset_fetcher is not None:
+            return asset_fetcher("index.html")
         return render_template("index.html")
+
+    @app.get("/static/<path:filename>", endpoint="static")
+    def static_files(filename):
+        if asset_fetcher is not None:
+            return asset_fetcher(f"static/{filename}")
+        return send_from_directory(Path(app.root_path) / "static", filename)
+
+    if asset_fetcher is not None:
+
+        @app.get("/<path:asset_path>")
+        def worker_static_fallback(asset_path):
+            return asset_fetcher(asset_path)
+
+    @app.get("/healthz")
+    def health_check():
+        with storage_lock:
+            read_store()
+        return jsonify({"status": "ok", "storage": app.config["STORAGE_BACKEND"]})
 
     @app.get("/api/state")
     def get_state():
@@ -254,7 +295,7 @@ def create_app(storage_dir=None):
             if starting_capital is not None:
                 general["starting_capital"] = starting_capital
             generals.append(general)
-            save_store(generals, trades)
+            save_generals(generals)
         return jsonify(general), 201
 
     @app.patch("/api/generals/<general_id>")
@@ -293,7 +334,7 @@ def create_app(storage_dir=None):
                     general.pop("starting_capital", None)
                 else:
                     general["starting_capital"] = starting_capital
-            _write_json(generals_path, generals)
+            save_generals(generals)
         return jsonify(general)
 
     @app.delete("/api/generals/<general_id>")
@@ -336,7 +377,7 @@ def create_app(storage_dir=None):
                 **trade_values,
             }
             trades.append(trade)
-            _write_json(trades_path, trades)
+            save_trades(trades)
         return jsonify(trade), 201
 
     @app.put("/api/generals/<general_id>/trades/<trade_id>")
@@ -361,7 +402,7 @@ def create_app(storage_dir=None):
             if trade is None:
                 return _error("Trade not found.", 404)
             trade.update(trade_values)
-            _write_json(trades_path, trades)
+            save_trades(trades)
         return jsonify(trade)
 
     @app.delete("/api/generals/<general_id>/trades/<trade_id>")
@@ -387,11 +428,10 @@ def create_app(storage_dir=None):
             ]
             for number, item in enumerate(own_remaining, start=1):
                 item["trade_number"] = number
-            _write_json(trades_path, remaining)
+            save_trades(remaining)
         return jsonify({"deleted": trade_id})
 
-    with storage_lock:
-        read_store()
+    if storage_factory is None and initialize_storage:
         generals_path.parent.mkdir(parents=True, exist_ok=True)
         if not generals_path.exists():
             _write_json(generals_path, [])
@@ -401,8 +441,8 @@ def create_app(storage_dir=None):
     return app
 
 
-app = create_app()
+app = create_app(initialize_storage=False)
 
 
 if __name__ == "__main__":
-    app.run()
+    create_app().run()
